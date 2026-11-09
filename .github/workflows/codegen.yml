@@ -1,0 +1,82 @@
+name: codegen
+
+on:
+  push:
+    branches: [main, master, 'v*']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  codegen:
+    name: "ss-lua .pb -> proto -> protoc"
+    runs-on: ubuntu-24.04
+    continue-on-error: true
+    steps:
+      - name: Checkout ss-proto
+        uses: actions/checkout@v7
+
+      - name: Clone ss-lua
+        run: git clone --depth 1 https://github.com/MakoStar/ss-lua.git ss-lua
+
+      - name: Setup protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          version: "33.x"
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: codegen
+
+      - name: Build pb2proto
+        run: cargo build --release --locked
+
+      - name: Convert every .pb and run protoc codegen
+        run: |
+          set -uo pipefail
+          BIN=./target/release/pb2proto
+          rm -rf tmp
+          mkdir -p tmp
+          mapfile -t PBS < <(find ss-lua -type f -name '*.pb' -not -path '*/.git/*' | sort)
+          echo "found ${#PBS[@]} .pb file(s)"
+          [ "${#PBS[@]}" -gt 0 ] || { echo "no .pb found"; exit 1; }
+          fail=0
+          i=0
+          for pb in "${PBS[@]}"; do
+            i=$((i + 1))
+            d="tmp/case$i"
+            mkdir -p "$d/proto"
+            echo "== [$i/${#PBS[@]}] $pb =="
+            if ! "$BIN" -i "$pb" --single -o "$d/proto/out.proto"; then
+              echo "  FAIL convert $pb"
+              fail=1
+              continue
+            fi
+            for lang in cpp python java csharp; do
+              mkdir -p "$d/gen/$lang"
+              if ! protoc --proto_path="$d/proto" --"${lang}_out=$d/gen/$lang" "$d/proto/out.proto"; then
+                echo "  FAIL protoc $lang $pb"
+                fail=1
+                continue
+              fi
+              if [ -z "$(find "$d/gen/$lang" -type f)" ]; then
+                echo "  FAIL empty $lang $pb"
+                fail=1
+              else
+                echo "  OK $lang"
+              fi
+            done
+          done
+          if [ "$fail" -ne 0 ]; then
+            echo "SOME FAILED"
+            exit 1
+          fi
+          echo "ALL PASS"

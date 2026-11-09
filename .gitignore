@@ -1,0 +1,6 @@
+# build
+/target
+# output
+/output
+# tests
+/tests

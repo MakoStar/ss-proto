@@ -1,0 +1,18 @@
+[package]
+name = "ss-proto"
+version = "0.1.0"
+edition = "2024"
+description = "Reverse-compile .pb to .proto"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "pb2proto"
+path = "src/main.rs"
+
+[dependencies]
+prost = "0.13"
+prost-types = "0.13"
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+logger = { git = "https://github.com/MakoStar/rust-pkg", branch = "main" }
+log = "0.4"
